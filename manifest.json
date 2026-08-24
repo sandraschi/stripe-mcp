@@ -1,0 +1,26 @@
+{
+  "name": "stripe-mcp",
+  "displayName": "Stripe MCP Server",
+  "version": "0.1.0",
+  "description": "FastMCP server and webapp for Stripe payment gateway, billing operations, subscription management, customer support automation, and Austrian/EU tax compliance (VAT & BAO).",
+  "author": "sandraschi",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sandraschi/stripe-mcp"
+  },
+  "keywords": [
+    "mcp",
+    "fastmcp",
+    "stripe",
+    "payments",
+    "billing",
+    "vat",
+    "austria",
+    "eu-vat",
+    "subscriptions"
+  ],
+  "main": "src/stripe_mcp/server.py",
+  "webappPort": 11166,
+  "apiPort": 11165
+}

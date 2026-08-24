@@ -1,0 +1,10 @@
+# .cursorrules — stripe-mcp
+
+You are working on stripe-mcp, an MCP server and SOTA React webapp providing Stripe payment tools and Austrian/EU tax compliance.
+
+## Guidelines
+- FastMCP 3.4+ standard
+- Windows host environment: use PowerShell and `uv`
+- Ports: 11165 (backend) and 11166 (frontend)
+- Always test with `uv run pytest` and lint with `uv run ruff check .`
+- Ensure Austrian VAT (20%/10%/13%), EU ATU VAT validation, and BAO 7-year invoice retention schema are strictly followed

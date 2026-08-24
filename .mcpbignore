@@ -1,0 +1,14 @@
+.venv/
+node_modules/
+**/node_modules/
+webapp/
+tests/
+data/
+target/
+*.bak
+*.bak.*
+*.mcpb
+.git/
+.github/
+.pytest_cache/
+.ruff_cache/

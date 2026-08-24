@@ -1,0 +1,36 @@
+{
+  "$schema": "https://glama.ai/mcp/manifest.json",
+  "name": "stripe-mcp",
+  "description": "Stripe Payment Gateway, Customer Operations & Austrian/EU Tax Compliance MCP Server",
+  "authors": [
+    {
+      "name": "sandraschi"
+    }
+  ],
+  "tools": [
+    {
+      "name": "manage_stripe_customers",
+      "description": "Manage Stripe customer records (list, get, create, update, search)"
+    },
+    {
+      "name": "manage_stripe_subscriptions",
+      "description": "Manage Stripe subscriptions (list, get, cancel, pause, resume)"
+    },
+    {
+      "name": "manage_stripe_payments",
+      "description": "Manage Stripe charges, payment intents, refunds, and disputes"
+    },
+    {
+      "name": "manage_stripe_checkout",
+      "description": "Create Stripe Payment Links, Checkout Sessions with EPS/SEPA/PSD2 support, and Invoices"
+    },
+    {
+      "name": "stripe_revenue_analytics",
+      "description": "Get MRR, active subscriber metrics, churn rate, and Austrian VAT summaries"
+    },
+    {
+      "name": "calculate_austrian_vat",
+      "description": "Calculate Austrian VAT rates (20%, 10%, 13%) and validate EU ATU VAT IDs for Reverse Charge"
+    }
+  ]
+}

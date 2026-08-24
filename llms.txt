@@ -1,0 +1,17 @@
+# stripe-mcp
+
+> FastMCP 3.4+ server for Stripe payment gateway, subscription analytics, billing support, and Austrian/EU tax compliance.
+
+## Tools Summary
+- `manage_stripe_customers`: Customer CRUD and search.
+- `manage_stripe_subscriptions`: Active subscriber management, cancellations, pauses.
+- `manage_stripe_payments`: Charges, payment intents, refunds, and dispute handling.
+- `manage_stripe_checkout`: Payment links, Checkout Sessions (EPS, SEPA, PSD2 3DS2), and Invoices.
+- `stripe_revenue_analytics`: MRR, churn rate, subscription KPIs, and Austrian VAT summaries.
+- `calculate_austrian_vat`: Austrian VAT (20%, 10%, 13%) and ATU VAT ID validation.
+
+## Endpoints
+- REST Health: `http://127.0.0.1:11165/api/health`
+- Webhooks: `http://127.0.0.1:11165/api/webhooks/stripe`
+- MCP HTTP: `http://127.0.0.1:11165/mcp`
+- Webapp: `http://127.0.0.1:11166`

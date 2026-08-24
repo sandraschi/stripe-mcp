@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# Node / Webapp
+node_modules/
+**/node_modules/
+webapp/dist/
+webapp/.vite/
+
+# Fleet / Build artifacts
+target/
+**/target/
+mcpb/src/
+*.mcpb
+data/
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+
+# Backups & Temp
+*.bak
+*.bak.*
+*.tmp
+*.log
+.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp

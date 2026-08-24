@@ -1,0 +1,21 @@
+# stripe-mcp Full Technical Documentation
+
+## Overview
+`stripe-mcp` is an enterprise FastMCP server and React dashboard designed for payment automation, customer billing support, subscription management, and Austrian/EU tax compliance.
+
+## Environment Variables
+- `PORT`: Backend port (default `11165`).
+- `WEB_PORT`: Webapp port (default `11166`).
+- `STRIPE_API_KEY`: Stripe API key (Restricted key preferred).
+- `STRIPE_WEBHOOK_SECRET`: Webhook signing secret (`whsec_...`).
+- `STRIPE_MODE`: `test` or `live`. Default `test`.
+- `STRIPE_READ_ONLY`: `true` or `false`. Default `false`.
+- `DEFAULT_CURRENCY`: Default currency code (`EUR`).
+- `DEFAULT_COUNTRY`: Default 2-letter country code (`AT`).
+- `DEFAULT_VAT_RATE`: Standard VAT rate (`0.20`).
+
+## Austrian & EU Compliance Architecture
+1. **Austrian VAT Rates**: Standard 20%, reduced 10% (food/books), reduced 13% (cultural/domestic flights).
+2. **EU Reverse Charge**: Checks `eu_vat` format (`ATU...`) and returns tax zero-rating rationale under EU B2B cross-border rules.
+3. **BAO § 132 Fiscal Invoicing**: Ensures invoice metadata schemas retain statutory fields (seller UID, buyer UID, sequential invoice number, itemized tax rates) and specifies the 7-year statutory archive requirement.
+4. **PSD2 3DS2**: Handles `requires_action` checkout states by issuing 3D Secure challenge redirect URLs.
