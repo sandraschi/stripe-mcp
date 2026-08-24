@@ -37,29 +37,41 @@ For maximum security, **do not use your root secret key** (`sk_live_...`). Use a
 
 ---
 
-## 3. Stripe Austria & EU Verification Regulations (Meldezettel & Two-Person Rules)
+## 3. Do You Need a GmbH? Supported Entity Types in Austria
 
-When registering a live Stripe account for an Austrian business entity (GmbH, OG, KG, or Sole Proprietorship), you must comply with strict EU 5th Anti-Money Laundering (AML) and Austrian Know Your Customer (KYC) identity verification requirements:
+**NO — You do NOT need a GmbH to use Stripe.** Stripe accepts multiple legal entity types in Austria:
 
-### 3.1 Two-Person Verification Rule (Representative & UBO Verification)
-Under EU/Austrian banking regulations, Stripe is required to identify and verify:
-1. **Account Representative**: The individual opening and operating the Stripe account on behalf of the company.
-2. **Ultimate Beneficial Owners (UBOs) & Co-Directors**: All natural persons directly or indirectly holding **more than 25% of company shares or voting rights**, or managing directors (*Geschäftsführer*) listed in the Austrian Commercial Register (*Firmenbuch*).
+- **Einzelunternehmen (Individual / Sole Proprietor)**: For freelancers, solo developers, and unregistered sole traders. Only **1 person** is required for identity & address verification.
+- **Eingetragenes Einzelunternehmen (e.U.)**: Sole trader registered in Commercial Register (*Firmenbuch*).
+- **GmbH / FlexCo / AG**: Incorporated companies. Requires *Firmenbuchauszug* and verification of all UBOs holding >25% shares.
+- **OG / KG / Verein**: Partnerships or registered non-profit associations (*Verein* with ZVR number).
+
+---
+
+## 4. Stripe Austria & EU Verification Regulations (Meldezettel & Two-Person Rules)
+
+When registering a live Stripe account for an Austrian business entity, you must comply with strict EU 5th Anti-Money Laundering (AML) and Austrian Know Your Customer (KYC) identity verification requirements:
+
+### 4.1 Single Person vs. Multi-Person Verification Rules
+- **Einzelunternehmen (Individual / Sole Proprietorship)**: Only **1 person** (yourself) needs to provide identity and address verification.
+- **GmbH / Corporate Entities**: Under EU/Austrian banking regulations, Stripe is required to identify and verify:
+  1. **Account Representative**: The individual opening and operating the Stripe account on behalf of the company.
+  2. **Ultimate Beneficial Owners (UBOs) & Co-Directors**: All natural persons directly or indirectly holding **more than 25% of company shares or voting rights**, or managing directors (*Geschäftsführer*) listed in the Austrian Commercial Register (*Firmenbuch*).
 
 > **Important**: For standard corporate structures (such as an Austrian GmbH with two co-founders or co-directors), **both individuals must complete full identity and address verification** before Stripe will issue live production API keys or process bank payouts.
 
-### 3.2 Proof of Home Address (Meldezettel & Meldebestätigung Rules)
+### 4.2 Proof of Home Address (Meldezettel & Meldebestätigung Rules)
 - **Recency Limit**: Official address proof (*Meldezettel*, *Meldebestätigung*, bank statement, or utility bill) must be fresh (**strictly dated within the last 3 to 6 months**).
 - **Two-Document Rule**: You **cannot** use the same document for photo ID and proof of address. If a Passport or Driver's License is uploaded as photo ID, a separate document (recent Meldezettel or bank statement) must be uploaded for home address proof.
 - **Scan Requirements**: Documents must be full-color, high-resolution scans showing all 4 corners of the page without cropping or obstruction.
 
-### 3.3 Business Entity Verification
-- **Commercial Register Excerpt**: You must provide a recent *Firmenbuchauszug* or official trade registry document.
+### 4.3 Business Entity Verification
+- **Commercial Register Excerpt**: You must provide a recent *Firmenbuchauszug* or official trade registry document (for GmbH / e.U.).
 - **VAT Identification Number**: Provide your Austrian *UID / ATU* number (e.g. `ATU78901234`) issued by Finanzamt Österreich for B2B Reverse Charge tax processing.
 
 ---
 
-## 4. Configuring Webhook Ingestion
+## 5. Configuring Webhook Ingestion
 
 To receive real-time updates for payments, subscription cancellations, or disputes:
 
@@ -76,7 +88,7 @@ To receive real-time updates for payments, subscription cancellations, or disput
 
 ---
 
-## 5. Setting Up Austrian & EU Compliance
+## 6. Setting Up Austrian & EU Compliance
 
 Ensure the following variables are present in `.env`:
 
@@ -94,7 +106,7 @@ This enforces:
 
 ---
 
-## 6. Webapp Onboarding Banner
+## 7. Webapp Onboarding Banner
 
 When you launch `.\start.ps1`, open `http://127.0.0.1:11166`. If you are running in MOCK mode, a prominent **Onboarding Banner** appears below the Dashboard hero:
 

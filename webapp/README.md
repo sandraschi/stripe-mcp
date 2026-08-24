@@ -15,13 +15,14 @@ The `stripe-mcp` webapp is a state-of-the-art (SOTA) dark-theme dashboard built 
 - ⚡ **Skills (`/skills`)**: Agent operational recipes.
 - 💬 **LLM Chat (`/chat`)**: Embedded assistant chat connected via Zustand store (`store/llm.ts`).
 - ⚙️ **Settings (`/settings`)**: Configure Restricted API keys, webhook secrets, default currency, and safety limits.
-- ❓ **Help & Docs (`/help`)**: Comprehensive user manual, Stripe overview, fleet integration map, and Austrian/EU regulations.
+- ❓ **Help & Docs (`/help`)**: Comprehensive user manual, Stripe overview, GmbH requirements, entity types, fleet integration map, and Austrian/EU regulations.
 - 📜 **Audit Logs (`/logs`)**: Immutable system audit log viewer.
 
 ## Austrian & EU Regulatory Summary
 
+- **Do You Need a GmbH?**: NO. Supported entity types include **Einzelunternehmen** (Individual / Sole Proprietorship - 1 person needed), **e.U.**, **GmbH / FlexCo** (requires verification of all UBOs with >25% shares), **OG/KG**, and **Verein**.
 - **Stripe KYC Onboarding**:
-  - **Two-Person Verification Rule**: Under EU 5th AML Directive, both the Account Representative and Ultimate Beneficial Owners (UBOs) / co-directors holding **>25% equity** must submit identity & address proof.
+  - **Single vs Multi-Person Verification**: Einzelunternehmen requires 1 person; GmbH requires verifying Account Representative AND all UBOs / Co-Directors.
   - **Proof of Address (Meldezettel / Meldebestätigung)**: Must be fresh (**strictly dated within 3 to 6 months**). Separate documents required for photo ID vs proof of address.
 - **Austrian Tax Compliance**:
   - UStG 1994 VAT Rates: 20% Standard, 10% & 13% Reduced Rates.

@@ -14,7 +14,7 @@
   <a href="#-key-features">Key Features</a> •
   <a href="#-architecture">Architecture</a> •
   <a href="#-sub-documentation-map">Sub-Docs Map</a> •
-  <a href="#-austrian--eu-compliance">Tax & Compliance</a>
+  <a href="#-austrian--eu-compliance">Tax & Entity Rules</a>
 </p>
 
 ---
@@ -57,6 +57,24 @@ Once launched, open **`http://127.0.0.1:11166`** to interact with the webapp das
 
 ---
 
+## 🇦🇹 Austrian & EU Legal Entity & Onboarding Rules
+
+### 1. Do You Need a GmbH? (No!)
+Stripe supports a wide range of legal entity types in Austria:
+- **Einzelunternehmen (Individual / Sole Proprietorship)**: Freelancers (*Freiberufler*), solo developers, or unregistered sole traders. **Requires only 1 person for identity & address verification.**
+- **Eingetragenes Einzelunternehmen (e.U.)**: Sole trader registered in Commercial Register (*Firmenbuch*).
+- **GmbH / FlexCo / AG**: Incorporated companies. Requires *Firmenbuchauszug* and verification of all UBOs holding >25% shares.
+- **OG / KG / Verein**: Partnerships or registered non-profit associations (*Verein* with ZVR number).
+
+### 2. Single vs. Multi-Person Verification Rules
+- **Einzelunternehmen**: 1 person needed (yourself). Passport/ID + Meldezettel / bank statement (< 3-6 months).
+- **GmbH / Corporate**: Under EU 5th AML directives, Stripe requires identifying and verifying the Account Representative AND all **Ultimate Beneficial Owners (UBOs)** holding **>25% of company shares** or serving as co-directors (*Geschäftsführer*). For standard corporate entities (e.g. GmbH with 2 co-founders), **both individuals must submit identity & address verification**.
+
+### 3. Proof of Address (Meldezettel / Meldebestätigung Rules)
+- Must be fresh (**dated within 3 to 6 months**). Photo ID (passport) and proof of address (Meldezettel) must be separate documents. Full-color scans showing all 4 corners required.
+
+---
+
 ## 🏗️ Architecture
 
 ```text
@@ -93,15 +111,6 @@ Once launched, open **`http://127.0.0.1:11166`** to interact with the webapp das
 
 ---
 
-## 🇦🇹 Austrian & EU Compliance & Onboarding Rules
-
-1. **Two-Person Verification Rule (Representative & UBOs)**: Under EU 5th AML directives and Austrian KYC regulations, Stripe requires verifying **both** the Account Representative AND all Ultimate Beneficial Owners (UBOs) holding **>25% equity** or co-managing directors. For standard corporate setups (e.g. GmbH with 2 co-founders), both persons must submit identity & address proof.
-2. **Proof of Address (Meldezettel / Meldebestätigung)**: Must be fresh (**dated within 3 to 6 months**). Photo ID (passport) and proof of address (Meldezettel) must be separate documents.
-3. **Austrian Tax Act (UStG 1994)**: 20% Standard, 10%/13% Reduced, and 0% Reverse Charge zero-rating.
-4. **BAO § 132**: Mandatory 7-year statutory invoice retention lock.
-
----
-
 ## 🗺️ Sub-Documentation Map
 
 | Area | Documentation Link | Description |
@@ -109,8 +118,8 @@ Once launched, open **`http://127.0.0.1:11166`** to interact with the webapp das
 | 🖥️ **Webapp Dashboard** | [`webapp/README.md`](webapp/README.md) | React 18, Vite, TailwindCSS dashboard guide & setup. |
 | 🐍 **Python Backend** | [`src/stripe_mcp/README.md`](src/stripe_mcp/README.md) | Core FastMCP server, tools, and tax engine reference. |
 | 📚 **Master Docs Stack** | [`docs/README.md`](docs/README.md) | Index of onboarding, configuration, tools, and troubleshooting guides. |
-| 📖 **System & Help Manual** | [`docs/HELP.md`](docs/HELP.md) | Full Stripe system manual, fleet integration map, and KYC rules. |
-| 🚀 **Onboarding Runbook** | [`docs/ONBOARDING.md`](docs/ONBOARDING.md) | Step-by-step account registration and Meldezettel verification guide. |
+| 📖 **System & Help Manual** | [`docs/HELP.md`](docs/HELP.md) | Full Stripe system manual, GmbH & entity guide, fleet map, and KYC rules. |
+| 🚀 **Onboarding Runbook** | [`docs/ONBOARDING.md`](docs/ONBOARDING.md) | Step-by-step account registration, single vs multi-person UBO rules & Meldezettel verification. |
 | ⚙️ **Configuration** | [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) | Environment variables & financial safety cap settings. |
 | 🛠️ **Tools Reference** | [`docs/TOOLS.md`](docs/TOOLS.md) | Complete parameter schemas & return types for all tools. |
 | 📝 **MCPB Prompts** | [`assets/prompts/README.md`](assets/prompts/README.md) | MCPB 3-4-100 prompts metrics and validation. |
