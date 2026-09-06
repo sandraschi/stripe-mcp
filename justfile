@@ -16,13 +16,13 @@ fmt:
     uv run ruff format .
 
 webapp-install:
-    cd webapp && npm install
+    cd webapp; npm install
 
 webapp-dev:
-    cd webapp && npm run dev
+    cd webapp; npm run dev
 
 webapp-build:
-    cd webapp && npx tsc --noEmit && npm run build
+    cd webapp; npx tsc --noEmit; npm run build
 
 mcpb-pack:
     uv run python scripts/mcpb_pack.py
