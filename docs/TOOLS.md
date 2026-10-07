@@ -15,6 +15,11 @@ Portmanteau tool for managing customer accounts.
 - `vat_id`: Optional EU VAT ID (e.g., `ATU12345678`)
 - `country`: Country code (e.g. `AT`)
 
+🔒 `create` is blocked when `STRIPE_READ_ONLY=true` (default), and against a real
+Stripe account requires interactive human confirmation (see
+[SAFETY.md](SAFETY.md#5-human-confirmation-before-every-real-write-elicitation)).
+`list`/`get`/`search` are always available.
+
 ---
 
 ## 2. `manage_stripe_subscriptions`
@@ -24,6 +29,11 @@ Portmanteau tool for subscription lifecycle management.
 - `operation`: Enum (`"list"`, `"get"`, `"cancel"`, `"pause"`, `"resume"`)
 - `subscription_id`: Stripe Subscription ID (`sub_...`)
 - `customer_id`: Filter by customer
+
+🔒 `cancel` is blocked when `STRIPE_READ_ONLY=true` (default). Against a real Stripe
+account it additionally requires the subscription to have been returned by a `list`
+call earlier in this same session (`STRIPE_REQUIRE_OBSERVED_IDS`, default on), plus
+interactive human confirmation. See [SAFETY.md](SAFETY.md).
 
 ---
 
@@ -36,6 +46,14 @@ Portmanteau tool for charges, payment intents, refunds, and disputes.
 - `amount`: Refund amount in major currency units (e.g. `50.00` EUR)
 - `reason`: Refund rationale
 
+🔒 `issue_refund` is blocked when `STRIPE_READ_ONLY=true` (default), capped at both
+`MAX_REFUND_AMOUNT_EUR` per call and `MAX_REFUND_TOTAL_EUR_PER_DAY` in aggregate, and
+sent with a deterministic idempotency key (hash of charge/amount/reason) so a network
+retry can't create a duplicate refund. Against a real Stripe account it additionally
+requires the charge to have been returned by a `list_charges` call earlier in this
+same session, plus interactive human confirmation before it executes. Full detail:
+[SAFETY.md](SAFETY.md).
+
 ---
 
 ## 4. `manage_stripe_checkout`
@@ -46,8 +64,20 @@ Portmanteau tool for creating checkout experiences and invoices.
 - `amount`: Transaction amount
 - `currency`: Currency code (default `EUR`)
 - `payment_method_types`: List of payment methods (e.g. `["card", "eps", "sepa_debit"]`)
-- `customer_id`: Associated customer ID
-- `vat_rate`: Applicable VAT rate (e.g. `0.20` for Austria)
+- `customer_id`: Associated customer ID — **required** for `create_invoice` against a
+  real Stripe account (Stripe invoices must be attached to an existing customer);
+  optional for the other two operations and in mock mode
+- `vat_type`: Applicable Austrian VAT rate type (`standard_20`, `reduced_10`, `reduced_13`)
+
+🔒 Every operation in this tool creates a real, payable Stripe object — there is no
+read-only op, and all three operations call the real Stripe API against a live/test
+key (`checkout.Session.create`, `PaymentLink.create`, `InvoiceItem.create` +
+`Invoice.create` + `Invoice.finalize_invoice` respectively). The whole tool is blocked
+when `STRIPE_READ_ONLY=true` (default) and capped at both `MAX_CHECKOUT_AMOUNT_EUR`
+per call and `MAX_CHECKOUT_TOTAL_EUR_PER_DAY` in aggregate. The live
+`create_checkout_session` and `create_payment_link` calls carry a deterministic
+idempotency key to prevent duplicates on retry, and every real-mode call requires
+interactive human confirmation before executing. Full detail: [SAFETY.md](SAFETY.md).
 
 ---
 

@@ -42,10 +42,81 @@ Stripe is a global payment processing gateway and financial platform. It allows 
 - **Centralized Austrian Tax Filings**: All customer invoices across fleet apps pass through `stripe-mcp` for unified monthly BMD / RZL tax export generation.
 
 ## 6. Safety Considerations & Guardrails
-- **Safety Cap (`MAX_REFUND_AMOUNT_EUR`)**: Hard limit (default €500.00) preventing programmatic refund overruns by AI agents.
-- **Read-Only Mode (`STRIPE_READ_ONLY=true`)**: Blocks all mutating actions during evaluation or staging tests.
-- **Restricted API Keys (`rk_live_...`)**: Least privilege access — root secret keys (`sk_live_...`) must never be used.
-- **Immutable Audit Logs**: All agent actions are timestamped and logged on port `11166` `/logs`.
+
+**Read-only by default.** `STRIPE_READ_ONLY=true` is the shipped default, not an
+opt-in. Every mutating path — `issue_refund`, subscription `cancel`, customer
+`create`, and all three `manage_stripe_checkout` operations (payment links, checkout
+sessions, invoices) — is blocked until someone deliberately sets
+`STRIPE_READ_ONLY=false`. This matters specifically because an MCP server sits behind
+an LLM: prompt injection from any untrusted content the agent reads (a scraped page,
+an inbound email, a WhatsApp message) can attempt to call a tool. Blocking by default
+means that attempt fails closed instead of needing a human to notice and intervene.
+
+Beyond that master switch, every real (non-mock) write goes through four more layers
+before it executes — full detail and rationale in
+[`SAFETY.md`](SAFETY.md), the canonical reference:
+
+- **Per-call and daily-aggregate amount caps** (`MAX_REFUND_AMOUNT_EUR` /
+  `MAX_REFUND_TOTAL_EUR_PER_DAY`, `MAX_CHECKOUT_AMOUNT_EUR` /
+  `MAX_CHECKOUT_TOTAL_EUR_PER_DAY`) — the daily cap catches "many calls under the
+  per-call limit" abuse that the per-call cap alone can't.
+- **Observed-ID scoping** (`STRIPE_REQUIRE_OBSERVED_IDS`, default on) — a refund or
+  subscription cancel can only target an ID this session actually saw returned by a
+  prior read call, not one an injected instruction supplied out of nowhere.
+- **Human confirmation via MCP elicitation** — every real write pauses mid-call for an
+  explicit human yes/no before executing, and fails closed (blocks the write) if the
+  client can't answer.
+- **Idempotency keys** on the two live money-moving Stripe calls (`Refund.create`,
+  `checkout.Session.create`) — a network retry replays the same key instead of
+  creating a duplicate refund or session.
+
+Plus:
+
+- **Restricted API Keys (`rk_live_...`)**: Least privilege access — root secret keys
+  (`sk_live_...`) must never be used. A startup canary probe warns if the configured
+  key can reach resources (Payouts) this app never touches.
+- **Mock-mode by default**: with no real API key configured, every tool runs against
+  synthetic data — nothing touches a real Stripe account until `STRIPE_API_KEY` is
+  set, and none of the four layers above add friction to mock-mode demos.
+- **Durable audit trail**: every write attempt, blocked or executed, is appended to
+  `data/audit_log.jsonl` and readable via `GET /api/audit/recent` — this survives a
+  restart, unlike an in-memory log.
+
+See [CONFIGURATION.md](CONFIGURATION.md#gating-model) for exactly which operations
+each setting blocks.
+
+## 6a. How this compares to the official Stripe MCP
+
+Stripe ships its own hosted MCP server at `mcp.stripe.com` (verified against
+[docs.stripe.com/mcp](https://docs.stripe.com/mcp), 2026-09-02 — check that page for
+what's changed since). It's a different design point, not a strictly better or worse
+one:
+
+| | `stripe-mcp` (this repo) | Official (`mcp.stripe.com`) |
+|---|---|---|
+| **Maintainer / trust** | Solo project | Stripe |
+| **Auth** | Restricted API key only | OAuth (revocable per-session in the Stripe Dashboard) or restricted key |
+| **Write surface** | 4 fixed, narrow tools (customers, subscriptions, payments, checkout) | `stripe_api_write` — one generic tool that can call **any** Stripe write endpoint (POST/PATCH/PUT/DELETE) across the entire API |
+| **Amount caps** | `MAX_REFUND_AMOUNT_EUR`, `MAX_CHECKOUT_AMOUNT_EUR`, enforced in code | None documented — no built-in ceiling on a refund or write amount |
+| **Read-only switch** | `STRIPE_READ_ONLY`, defaults on, enforced server-side | No equivalent for agent calls; access is toggled per live/sandbox mode from the Dashboard, not scoped per write-amount or per-call |
+| **Prompt-injection mitigation** | Fails closed by default (see above) | Stripe's own docs: *"Enable human confirmation of tools, and be careful when combining Stripe MCP with other servers, to avoid prompt injection attacks"* — the mitigation is pushed to the client's approval UI, not built into the server |
+| **Idempotency keys on writes** | Yes, on refund and checkout session creation | Not documented |
+| **EU/Austrian tax logic (VAT, BAO §132, Reverse Charge)** | Built in (`austria_tax.py`, `calculate_austrian_vat`) | Generic Tax API pass-through only, no jurisdiction-specific logic |
+| **Dashboard / Prefab UI** | React webapp + 2 Prefab UI cards | None |
+| **API surface breadth** | 4 domains (customers, subscriptions, payments, checkout) | Nearly the full Stripe API (100+ resources) via `stripe_api_read`/`stripe_api_write`, plus analytics, treasury, docs search |
+
+**The honest takeaway:** the official server is the safer default for broad,
+general-purpose Stripe access precisely because it's maintained by Stripe and uses
+revocable OAuth — but its write path is a single unscoped `stripe_api_write` tool
+with no amount cap, and Stripe's own documentation places the injection-safety burden
+on the *client* ("enable human confirmation"), not the server. This repo trades that
+breadth for a narrower, capped, fail-closed-by-default write surface plus domain logic
+(Austrian/EU tax compliance) the official server doesn't attempt. If you need
+broad live-account access, prefer the official server with tool-call confirmation
+switched on in your MCP client. If you specifically need BAO/VAT-aware invoicing and
+want the smallest possible blast radius for an agent that also touches untrusted
+input, this repo's tighter, capped surface is the better fit — provided
+`STRIPE_READ_ONLY` stays on except when a human is deliberately enabling writes.
 
 ## 7. Paying vs Receiving Payments (Inbound vs Outbound)
 - **Receiving Money (Inbound Revenue)**:

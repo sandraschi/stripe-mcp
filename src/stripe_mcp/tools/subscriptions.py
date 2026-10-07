@@ -1,9 +1,11 @@
 from typing import Annotated, Any, Dict, Optional
 
+from fastmcp import Context
 from pydantic import Field
 
 from stripe_mcp.config import settings
 from stripe_mcp.models import SubscriptionOp
+from stripe_mcp.safety import audit_log, confirm_write, is_observed, mark_observed
 
 MOCK_SUBSCRIPTIONS = [
     {
@@ -30,10 +32,11 @@ MOCK_SUBSCRIPTIONS = [
     }
 ]
 
-def handle_manage_subscriptions(
+async def handle_manage_subscriptions(
     operation: Annotated[SubscriptionOp, Field(description="Subscription operation enum (list, get, cancel, pause, resume)")],
     subscription_id: Annotated[Optional[str], Field(description="Stripe Subscription ID (sub_...)")] = None,
     customer_id: Annotated[Optional[str], Field(description="Filter by customer ID")] = None,
+    ctx: Optional[Context] = None,
 ) -> Dict[str, Any]:
     """Manage Stripe subscriptions.
 
@@ -71,12 +74,38 @@ def handle_manage_subscriptions(
     try:
         if operation == SubscriptionOp.LIST:
             res = stripe.Subscription.list(limit=20, customer=customer_id if customer_id else None)
-            return {"success": True, "mode": settings.stripe_mode, "operation": "list", "data": [s.to_dict() for s in res.data]}
+            subs = [s.to_dict() for s in res.data]
+            for s in subs:
+                await mark_observed(ctx, "subscription", s.get("id"))
+            return {"success": True, "mode": settings.stripe_mode, "operation": "list", "data": subs}
+
         if operation == SubscriptionOp.CANCEL:
+            audit_base = {"tool": "manage_stripe_subscriptions", "operation": "cancel", "subscription_id": subscription_id}
+
             if settings.stripe_read_only:
+                audit_log({**audit_base, "result": "blocked_read_only"})
                 return {"success": False, "error": "STRIPE_READ_ONLY mode enabled."}
+
+            if settings.require_observed_ids and not await is_observed(ctx, "subscription", subscription_id):
+                audit_log({**audit_base, "result": "blocked_unobserved_target"})
+                return {
+                    "success": False,
+                    "error": (
+                        f"UnobservedTarget: subscription_id '{subscription_id}' was not returned by a "
+                        "list call in this session. Call manage_stripe_subscriptions(operation=\"list\") "
+                        "first, or set STRIPE_REQUIRE_OBSERVED_IDS=false to disable this check."
+                    ),
+                }
+
+            confirmed, confirm_error = await confirm_write(ctx, f"Cancel live subscription {subscription_id}?")
+            if not confirmed:
+                audit_log({**audit_base, "result": "blocked_not_confirmed", "detail": confirm_error})
+                return {"success": False, "error": f"NotConfirmed: {confirm_error}"}
+
             res = stripe.Subscription.cancel(subscription_id)
+            audit_log({**audit_base, "result": "executed"})
             return {"success": True, "mode": settings.stripe_mode, "operation": "cancel", "data": res.to_dict()}
+
         return {"success": True, "mode": settings.stripe_mode, "operation": operation.value, "data": {}}
     except Exception as e:
         return {"success": False, "error": str(e)}

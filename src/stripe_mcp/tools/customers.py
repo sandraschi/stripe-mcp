@@ -1,10 +1,12 @@
 from typing import Annotated, Any, Dict, Optional
 
+from fastmcp import Context
 from pydantic import Field
 
 from stripe_mcp.austria_tax import validate_atu_vat_id
 from stripe_mcp.config import settings
 from stripe_mcp.models import CustomerOp
+from stripe_mcp.safety import audit_log, confirm_write
 
 # Declared MOCK customers for zero-key evaluation
 MOCK_CUSTOMERS = [
@@ -30,13 +32,14 @@ MOCK_CUSTOMERS = [
     }
 ]
 
-def handle_manage_customers(
+async def handle_manage_customers(
     operation: Annotated[CustomerOp, Field(description="Customer operation enum (list, get, create, update, search)")],
     customer_id: Annotated[Optional[str], Field(description="Stripe customer ID (cus_...)")] = None,
     email: Annotated[Optional[str], Field(description="Customer email address")] = None,
     name: Annotated[Optional[str], Field(description="Customer legal name")] = None,
     vat_id: Annotated[Optional[str], Field(description="EU/Austrian VAT ID (e.g., ATU12345678)")] = None,
     country: Annotated[Optional[str], Field(description="ISO 2-letter country code (default AT)")] = None,
+    ctx: Optional[Context] = None,
 ) -> Dict[str, Any]:
     """Manage Stripe customer records.
 
@@ -57,6 +60,8 @@ def handle_manage_customers(
             return {"success": True, "mode": "MOCK", "operation": "get", "data": found}
 
         if operation == CustomerOp.CREATE:
+            if settings.stripe_read_only:
+                return {"success": False, "error": "STRIPE_READ_ONLY mode enabled. Customer creation blocked."}
             vat_val = validate_atu_vat_id(vat_id) if vat_id else None
             new_cus = {
                 "id": f"cus_at_{len(MOCK_CUSTOMERS)+101}",
@@ -90,10 +95,22 @@ def handle_manage_customers(
             res = stripe.Customer.retrieve(customer_id)
             return {"success": True, "mode": settings.stripe_mode, "operation": "get", "data": res.to_dict()}
         if operation == CustomerOp.CREATE:
+            audit_base = {"tool": "manage_stripe_customers", "operation": "create", "email": email, "name": name}
+
+            if settings.stripe_read_only:
+                audit_log({**audit_base, "result": "blocked_read_only"})
+                return {"success": False, "error": "STRIPE_READ_ONLY mode enabled. Customer creation blocked."}
+
+            confirmed, confirm_error = await confirm_write(ctx, f"Create a live Stripe customer '{name or email}'?")
+            if not confirmed:
+                audit_log({**audit_base, "result": "blocked_not_confirmed", "detail": confirm_error})
+                return {"success": False, "error": f"NotConfirmed: {confirm_error}"}
+
             params = {"email": email, "name": name, "address": {"country": country or "AT"}}
             if vat_id:
                 params["tax_id_data"] = [{"type": "eu_vat", "value": vat_id}]
             res = stripe.Customer.create(**params)
+            audit_log({**audit_base, "result": "executed", "customer_id": res.id})
             return {"success": True, "mode": settings.stripe_mode, "operation": "create", "data": res.to_dict()}
         return {"success": True, "mode": settings.stripe_mode, "operation": operation.value, "data": {}}
     except Exception as e:

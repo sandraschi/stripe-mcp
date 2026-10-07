@@ -12,9 +12,10 @@
 <p align="center">
   <a href="#-quick-start">Quick Start</a> •
   <a href="#-key-features">Key Features</a> •
+  <a href="#%EF%B8%8F-safety--gating">Safety & Gating</a> •
+  <a href="#%EF%B8%8F-vs-the-official-stripe-mcp">vs. Official Stripe MCP</a> •
   <a href="#-architecture">Architecture</a> •
-  <a href="#-sub-documentation-map">Sub-Docs Map</a> •
-  <a href="#-austrian--eu-compliance">Tax & Entity Rules</a>
+  <a href="#-sub-documentation-map">Sub-Docs Map</a>
 </p>
 
 ---
@@ -47,13 +48,59 @@ Once launched, open **`http://127.0.0.1:11166`** to interact with the webapp das
 - 💳 **Customer & Charge Operations**: Create customers, update metadata, fetch charges, and track disputes.
 - 🔁 **Subscription Management**: Track active subscribers, pause, resume, cancel, and monitor MRR & churn KPIs.
 - 🛍️ **3DS2 Checkout Generator**: Generate Stripe Payment Links & Checkout Sessions supporting **Cards**, **EPS Online Banking**, and **SEPA Direct Debit**.
-- 🛡️ **Financial Safety Caps**: Strict hard limit (`MAX_REFUND_AMOUNT_EUR = €500.00`) blocking unauthorized agent refund overruns.
+- 🛡️ **Read-Only by Default**: `STRIPE_READ_ONLY=true` ships as the default — refunds, subscription cancels, customer creation, and all checkout/invoice creation are blocked until a human explicitly opts in. See [Safety & Gating](#%EF%B8%8F-safety--gating).
+- 💶 **Financial Safety Caps**: Hard limits (`MAX_REFUND_AMOUNT_EUR = €500.00`, `MAX_CHECKOUT_AMOUNT_EUR = €5000.00`) enforced in code, independent of the read-only switch.
 - 🇦🇹 **Austrian & EU Tax Compliance**:
   - Automatic **20% Standard VAT**, **10% / 13% Reduced Rates** (UStG 1994).
   - VIES/EU VAT ID syntax validation for **0% Reverse Charge** (`ATU\d{8}`).
   - **BAO § 132** 7-year fiscal invoice archive lock metadata.
 - 🖥️ **SOTA React Webapp Dashboard (Port 11166)**: Catch-them-all UI with Dashboard, Customer Directory, Subscription Manager, Refund Studio, Invoice Studio, Webhook Inbox, Tools Workbench, Skills, LLM Chat, Settings, Help, and Audit Logs.
 - ⚡ **Mock-until-Onboarded**: Works out of the box with synthetic Austrian data until your Stripe Restricted API Key (`rk_test_...`) is connected.
+
+---
+
+## 🛡️ Safety & Gating
+
+This server sits behind an LLM. An agent that reads untrusted content (a scraped
+page, an inbound email, a forwarded message) can be manipulated into calling a tool
+it was never meant to call — so every path capable of moving money or creating a
+real Stripe object fails closed by default. **Full threat model and rationale:
+[`docs/SAFETY.md`](docs/SAFETY.md).**
+
+| Control | Default | Blocks |
+|---|---|---|
+| `STRIPE_READ_ONLY` | **`true`** | `issue_refund`, subscription `cancel`, customer `create`, and all of `manage_stripe_checkout` (payment links, checkout sessions, invoices) |
+| `MAX_REFUND_AMOUNT_EUR` / `MAX_CHECKOUT_AMOUNT_EUR` | `€500` / `€5000` per call | Any single call above the cap, even with `STRIPE_READ_ONLY=false` |
+| `MAX_REFUND_TOTAL_EUR_PER_DAY` / `MAX_CHECKOUT_TOTAL_EUR_PER_DAY` | `€2000` / `€20000` per day | Many-small-calls abuse that a per-call cap alone misses |
+| `STRIPE_REQUIRE_OBSERVED_IDS` | **`true`** | A refund/cancel targeting a charge or subscription ID this session never actually saw returned by a read call |
+| Human confirmation (MCP elicitation) | always on, real mode | Every real write — fails closed if the client can't answer |
+| Idempotency keys | always on, real mode | Duplicate refunds/checkout sessions from a network retry |
+| Mock mode | on until `STRIPE_API_KEY` is set | Any call to a real Stripe account |
+
+Flip `STRIPE_READ_ONLY=false` only when you deliberately want the agent able to write.
+None of the controls above add friction to mock-mode demos — they apply only to real
+Stripe calls. Full detail on exactly what each setting gates:
+[`docs/CONFIGURATION.md`](docs/CONFIGURATION.md#gating-model).
+
+---
+
+## ⚖️ vs. the official Stripe MCP
+
+Stripe ships its own hosted server at `mcp.stripe.com`. It's a different trade-off,
+not simply better or worse — see [`docs/HELP.md`](docs/HELP.md#6a-how-this-compares-to-the-official-stripe-mcp)
+for the full comparison (verified against Stripe's docs, 2026-09-02). Short version:
+
+- Official: OAuth, maintained by Stripe, but its entire write surface is one generic
+  `stripe_api_write` tool that can call *any* Stripe write endpoint — no documented
+  amount cap. Stripe's own docs recommend enabling "human confirmation of tools" in
+  your MCP client as the prompt-injection mitigation.
+- This repo: four narrow, capped, fail-closed-by-default tools, plus Austrian/EU tax
+  logic (VAT, BAO §132, Reverse Charge) the official server doesn't have — at the cost
+  of being a much smaller, less battle-tested project.
+
+Use the official server for broad live-account access with tool confirmation switched
+on. Use this one where a narrow, capped write surface and built-in AT/EU tax
+compliance matter more than breadth.
 
 ---
 
@@ -115,10 +162,11 @@ Stripe supports a wide range of legal entity types in Austria:
 
 | Area | Documentation Link | Description |
 |---|---|---|
+| 🛡️ **Safety** | [`docs/SAFETY.md`](docs/SAFETY.md) | High-risk-server threat model: every write-path control, why it exists, and its limits. |
 | 🖥️ **Webapp Dashboard** | [`webapp/README.md`](webapp/README.md) | React 18, Vite, TailwindCSS dashboard guide & setup. |
 | 🐍 **Python Backend** | [`src/stripe_mcp/README.md`](src/stripe_mcp/README.md) | Core FastMCP server, tools, and tax engine reference. |
 | 📚 **Master Docs Stack** | [`docs/README.md`](docs/README.md) | Index of onboarding, configuration, tools, and troubleshooting guides. |
-| 📖 **System & Help Manual** | [`docs/HELP.md`](docs/HELP.md) | Full Stripe system manual, GmbH & entity guide, fleet map, and KYC rules. |
+| 📖 **System & Help Manual** | [`docs/HELP.md`](docs/HELP.md) | Full Stripe system manual, GmbH & entity guide, fleet map, KYC rules, safety guardrails, and the official-Stripe-MCP comparison. |
 | 🚀 **Onboarding Runbook** | [`docs/ONBOARDING.md`](docs/ONBOARDING.md) | Step-by-step account registration, single vs multi-person UBO rules & Meldezettel verification. |
 | ⚙️ **Configuration** | [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) | Environment variables & financial safety cap settings. |
 | 🛠️ **Tools Reference** | [`docs/TOOLS.md`](docs/TOOLS.md) | Complete parameter schemas & return types for all tools. |

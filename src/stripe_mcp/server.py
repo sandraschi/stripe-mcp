@@ -4,7 +4,8 @@ from contextlib import asynccontextmanager
 from typing import Annotated, Any, Dict, List, Optional
 
 import uvicorn
-from fastmcp import FastMCP
+from fastmcp import Context, FastMCP
+from mcp.types import ToolAnnotations
 from pydantic import Field
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
@@ -23,6 +24,7 @@ from stripe_mcp.models import (
     PaymentOp,
     SubscriptionOp,
 )
+from stripe_mcp.safety import read_recent_audit_events
 from stripe_mcp.tools.analytics import handle_revenue_analytics
 from stripe_mcp.tools.checkout import handle_manage_checkout
 from stripe_mcp.tools.customers import handle_manage_customers
@@ -49,6 +51,24 @@ async def server_lifespan(server: FastMCP):
             logger.info("Stripe API connectivity probe successful.")
         except Exception as e:
             logger.warning(f"Stripe API probe warning: {e}. Falling back to safe operation.")
+
+        # Least-privilege canary: stripe-mcp never touches Payouts. A restricted key
+        # that CAN list them is scoped wider than this app needs -- flag it so the
+        # operator can narrow it in the Stripe Dashboard. This can't detect every
+        # over-grant (there's no API to introspect a restricted key's own scopes),
+        # but it catches the common case.
+        try:
+            stripe.Payout.list(limit=1)
+            logger.warning(
+                "Least-privilege check: STRIPE_API_KEY can list Payouts, a resource "
+                "stripe-mcp never uses. Consider narrowing this restricted key's scopes."
+            )
+        except Exception as e:
+            status = getattr(e, "http_status", None)
+            if status == 403:
+                logger.info("Least-privilege check: STRIPE_API_KEY correctly lacks Payout access.")
+            else:
+                logger.debug(f"Least-privilege probe inconclusive: {e}")
     else:
         logger.info("Operating in declared MOCK mode with sample data.")
     yield
@@ -57,16 +77,20 @@ async def server_lifespan(server: FastMCP):
 mcp = FastMCP("stripe", lifespan=server_lifespan)
 
 # Tool Registrations
-@mcp.tool()
-def manage_stripe_customers(
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True))
+async def manage_stripe_customers(
     operation: Annotated[CustomerOp, Field(description="Customer operation (list, get, create, update, search)")],
     customer_id: Annotated[Optional[str], Field(description="Stripe Customer ID (cus_...)")] = None,
     email: Annotated[Optional[str], Field(description="Customer email")] = None,
     name: Annotated[Optional[str], Field(description="Customer legal name")] = None,
     vat_id: Annotated[Optional[str], Field(description="EU/Austrian VAT ID (e.g., ATU12345678)")] = None,
     country: Annotated[Optional[str], Field(description="ISO 2-letter country code")] = None,
+    ctx: Context = None,
 ) -> Dict[str, Any]:
     """Manage Stripe customer records.
+
+    `create` is blocked when STRIPE_READ_ONLY=true (default), and against a real
+    Stripe account additionally requires interactive human confirmation.
 
     ## Return Format
     Returns dictionary with operation results and customer data.
@@ -74,15 +98,20 @@ def manage_stripe_customers(
     ## Examples
     - `manage_stripe_customers(operation="list")`
     """
-    return handle_manage_customers(operation, customer_id, email, name, vat_id, country)
+    return await handle_manage_customers(operation, customer_id, email, name, vat_id, country, ctx)
 
-@mcp.tool()
-def manage_stripe_subscriptions(
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, openWorldHint=True))
+async def manage_stripe_subscriptions(
     operation: Annotated[SubscriptionOp, Field(description="Subscription operation (list, get, cancel, pause, resume)")],
     subscription_id: Annotated[Optional[str], Field(description="Stripe Subscription ID (sub_...)")] = None,
     customer_id: Annotated[Optional[str], Field(description="Filter by customer ID")] = None,
+    ctx: Context = None,
 ) -> Dict[str, Any]:
     """Manage Stripe subscriptions.
+
+    `cancel` is blocked when STRIPE_READ_ONLY=true (default). Against a real Stripe
+    account it also requires the subscription to have been seen via `list` in this
+    session first, plus interactive human confirmation.
 
     ## Return Format
     Returns subscription list or detailed item object.
@@ -90,17 +119,23 @@ def manage_stripe_subscriptions(
     ## Examples
     - `manage_stripe_subscriptions(operation="list")`
     """
-    return handle_manage_subscriptions(operation, subscription_id, customer_id)
+    return await handle_manage_subscriptions(operation, subscription_id, customer_id, ctx)
 
-@mcp.tool()
-def manage_stripe_payments(
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, openWorldHint=True))
+async def manage_stripe_payments(
     operation: Annotated[PaymentOp, Field(description="Payment operation (list_charges, get_payment_intent, issue_refund, get_disputes)")],
     charge_id: Annotated[Optional[str], Field(description="Stripe Charge ID (ch_...)")] = None,
     payment_intent_id: Annotated[Optional[str], Field(description="Stripe PaymentIntent ID (pi_...)")] = None,
     amount: Annotated[Optional[float], Field(description="Refund amount in EUR")] = None,
     reason: Annotated[Optional[str], Field(description="Refund reason")] = None,
+    ctx: Context = None,
 ) -> Dict[str, Any]:
     """Manage Stripe charges, payment intents, refunds, and disputes with safety caps.
+
+    `issue_refund` is blocked when STRIPE_READ_ONLY=true (default), capped at
+    MAX_REFUND_AMOUNT_EUR and MAX_REFUND_TOTAL_EUR_PER_DAY regardless. Against a real
+    Stripe account it also requires the charge to have been seen via `list_charges` in
+    this session first, plus interactive human confirmation.
 
     ## Return Format
     Returns charge or refund transaction status.
@@ -108,10 +143,10 @@ def manage_stripe_payments(
     ## Examples
     - `manage_stripe_payments(operation="list_charges")`
     """
-    return handle_manage_payments(operation, charge_id, payment_intent_id, amount, reason)
+    return await handle_manage_payments(operation, charge_id, payment_intent_id, amount, reason, ctx)
 
-@mcp.tool()
-def manage_stripe_checkout(
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True))
+async def manage_stripe_checkout(
     operation: Annotated[CheckoutOp, Field(description="Checkout operation (create_payment_link, create_checkout_session, create_invoice)")],
     amount: Annotated[float, Field(description="Net amount in major currency units")],
     currency: Annotated[str, Field(description="Currency code (default EUR)")] = "EUR",
@@ -119,8 +154,14 @@ def manage_stripe_checkout(
     customer_id: Annotated[Optional[str], Field(description="Stripe Customer ID")] = None,
     customer_vat_id: Annotated[Optional[str], Field(description="Customer EU VAT ID (ATU...)")] = None,
     vat_type: Annotated[AustrianVatType, Field(description="Austrian VAT rate type")] = AustrianVatType.STANDARD_20,
+    ctx: Context = None,
 ) -> Dict[str, Any]:
     """Create Stripe Payment Links, Checkout Sessions, or Invoices with Austrian/EU tax calculation.
+
+    Every operation here creates a real, payable Stripe object. This entire tool is
+    blocked when STRIPE_READ_ONLY=true (default), capped at MAX_CHECKOUT_AMOUNT_EUR and
+    MAX_CHECKOUT_TOTAL_EUR_PER_DAY, and against a real Stripe account requires
+    interactive human confirmation before creating anything.
 
     ## Return Format
     Returns checkout URL or invoice object with tax breakdown.
@@ -128,9 +169,9 @@ def manage_stripe_checkout(
     ## Examples
     - `manage_stripe_checkout(operation="create_payment_link", amount=99.00)`
     """
-    return handle_manage_checkout(operation, amount, currency, payment_method_types, customer_id, customer_vat_id, vat_type)
+    return await handle_manage_checkout(operation, amount, currency, payment_method_types, customer_id, customer_vat_id, vat_type, ctx)
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=True))
 def stripe_revenue_analytics(
     metric: Annotated[AnalyticsMetric, Field(description="Metric (mrr, churn, disputes, vat_summary, all)")] = AnalyticsMetric.ALL
 ) -> Dict[str, Any]:
@@ -144,7 +185,7 @@ def stripe_revenue_analytics(
     """
     return handle_revenue_analytics(metric)
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False))
 def calculate_austrian_vat(
     amount: Annotated[float, Field(description="Net amount in EUR")],
     vat_type: Annotated[AustrianVatType, Field(description="VAT rate type (standard_20, reduced_10, reduced_13)")] = AustrianVatType.STANDARD_20,
@@ -160,12 +201,12 @@ def calculate_austrian_vat(
     """
     return calculate_austrian_tax(amount, vat_type=vat_type, customer_vat_id=customer_vat_id)
 
-@mcp.tool(app=True)
+@mcp.tool(app=True, annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=True))
 def show_customer_billing_health(customer_id: Annotated[Optional[str], Field(description="Customer ID")] = "cus_at_101") -> Dict[str, Any]:
     """Prefab UI card showing customer billing health and active subscriptions."""
     return handle_show_customer_billing_health(customer_id)
 
-@mcp.tool(app=True)
+@mcp.tool(app=True, annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=True))
 def show_revenue_kpi_dashboard() -> Dict[str, Any]:
     """Prefab UI card displaying MRR, active subscriber count, and Austrian VAT totals."""
     return handle_show_revenue_kpi_dashboard()
@@ -191,11 +232,15 @@ async def webhook_endpoint(request: Request):
 async def recent_webhooks_endpoint(request: Request):
     return JSONResponse({"webhooks": get_recent_webhooks()})
 
+async def recent_audit_endpoint(request: Request):
+    return JSONResponse({"audit_events": read_recent_audit_events()})
+
 # Starlette App setup
 routes = [
     Route("/api/health", health_endpoint, methods=["GET"]),
     Route("/api/webhooks/stripe", webhook_endpoint, methods=["POST"]),
     Route("/api/webhooks/recent", recent_webhooks_endpoint, methods=["GET"]),
+    Route("/api/audit/recent", recent_audit_endpoint, methods=["GET"]),
     Mount("/", app=mcp._mcp_server)
 ]
 

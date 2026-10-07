@@ -1,9 +1,17 @@
 from typing import Annotated, Any, Dict, Optional
 
+from fastmcp import Context
 from pydantic import Field
 
 from stripe_mcp.config import settings
 from stripe_mcp.models import PaymentOp
+from stripe_mcp.safety import (
+    audit_log,
+    check_and_record_velocity,
+    confirm_write,
+    is_observed,
+    mark_observed,
+)
 
 MOCK_CHARGES = [
     {
@@ -28,12 +36,13 @@ MOCK_CHARGES = [
     }
 ]
 
-def handle_manage_payments(
+async def handle_manage_payments(
     operation: Annotated[PaymentOp, Field(description="Payment operation enum (list_charges, get_payment_intent, issue_refund, get_disputes)")],
     charge_id: Annotated[Optional[str], Field(description="Stripe Charge ID (ch_...)")] = None,
     payment_intent_id: Annotated[Optional[str], Field(description="Stripe PaymentIntent ID (pi_...)")] = None,
     amount: Annotated[Optional[float], Field(description="Refund amount in EUR")] = None,
     reason: Annotated[Optional[str], Field(description="Refund rationale (requested_by_customer, duplicate, fraudulent)")] = None,
+    ctx: Optional[Context] = None,
 ) -> Dict[str, Any]:
     """Manage Stripe charges, payment intents, refunds, and disputes.
 
@@ -73,21 +82,68 @@ def handle_manage_payments(
 
         return {"success": True, "mode": "MOCK", "operation": operation.value, "data": {}}
 
+    import hashlib
+
     import stripe
     stripe.api_key = settings.stripe_api_key
 
     try:
         if operation == PaymentOp.LIST_CHARGES:
             res = stripe.Charge.list(limit=20)
-            return {"success": True, "mode": settings.stripe_mode, "operation": "list_charges", "data": [c.to_dict() for c in res.data]}
+            charges = [c.to_dict() for c in res.data]
+            for c in charges:
+                await mark_observed(ctx, "charge", c.get("id"))
+            return {"success": True, "mode": settings.stripe_mode, "operation": "list_charges", "data": charges}
+
         if operation == PaymentOp.ISSUE_REFUND:
+            audit_base = {
+                "tool": "manage_stripe_payments", "operation": "issue_refund",
+                "charge_id": charge_id, "amount_eur": amount, "reason": reason,
+            }
+
             if settings.stripe_read_only:
+                audit_log({**audit_base, "result": "blocked_read_only"})
                 return {"success": False, "error": "STRIPE_READ_ONLY mode enabled."}
+
             refund_amt = amount or 0.0
             if refund_amt > settings.max_refund_amount_eur:
+                audit_log({**audit_base, "result": "blocked_amount_cap"})
                 return {"success": False, "error": f"SafetyCapExceeded: Max EUR {settings.max_refund_amount_eur:.2f} limit."}
-            res = stripe.Refund.create(charge=charge_id, amount=int(refund_amt * 100), reason=reason)
+
+            if settings.require_observed_ids and not await is_observed(ctx, "charge", charge_id):
+                audit_log({**audit_base, "result": "blocked_unobserved_target"})
+                return {
+                    "success": False,
+                    "error": (
+                        f"UnobservedTarget: charge_id '{charge_id}' was not returned by a "
+                        "list_charges call in this session, so it cannot be refunded blind. "
+                        "Call manage_stripe_payments(operation=\"list_charges\") first, or set "
+                        "STRIPE_REQUIRE_OBSERVED_IDS=false to disable this check."
+                    ),
+                }
+
+            velocity_error = check_and_record_velocity("refund", refund_amt, settings.max_refund_total_eur_per_day)
+            if velocity_error:
+                audit_log({**audit_base, "result": "blocked_velocity_cap"})
+                return {"success": False, "error": velocity_error}
+
+            confirmed, confirm_error = await confirm_write(
+                ctx, f"Issue a EUR {refund_amt:.2f} refund on charge {charge_id} (reason: {reason or 'unspecified'})?"
+            )
+            if not confirmed:
+                audit_log({**audit_base, "result": "blocked_not_confirmed", "detail": confirm_error})
+                return {"success": False, "error": f"NotConfirmed: {confirm_error}"}
+
+            idempotency_key = hashlib.sha256(
+                f"refund|{charge_id}|{refund_amt}|{reason}".encode()
+            ).hexdigest()
+            res = stripe.Refund.create(
+                charge=charge_id, amount=int(refund_amt * 100), reason=reason,
+                idempotency_key=idempotency_key
+            )
+            audit_log({**audit_base, "result": "executed", "refund_id": res.id})
             return {"success": True, "mode": settings.stripe_mode, "operation": "issue_refund", "data": res.to_dict()}
+
         return {"success": True, "mode": settings.stripe_mode, "operation": operation.value, "data": {}}
     except Exception as e:
         return {"success": False, "error": str(e)}
